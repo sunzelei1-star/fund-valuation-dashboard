@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
+from io import StringIO
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -32,6 +35,7 @@ I18N = {
         "query_table": "基金估值结果",
         "holdings_header": "我的持仓",
         "use_default": "加载示例持仓",
+        "fallback_editor_hint": "当前 Streamlit 版本不支持交互表格，已切换为 CSV 文本编辑模式（列：code,name,shares,cost_per_share）。",
         "kpi_header": "KPI 核心指标",
         "kpi_total_cost": "总持仓成本",
         "kpi_market": "当前持仓市值",
@@ -64,6 +68,7 @@ I18N = {
         "query_table": "Fund valuation results",
         "holdings_header": "My Holdings",
         "use_default": "Load sample holdings",
+        "fallback_editor_hint": "Your Streamlit version does not support editable tables. Falling back to CSV text editing (columns: code,name,shares,cost_per_share).",
         "kpi_header": "KPI Overview",
         "kpi_total_cost": "Total Cost",
         "kpi_market": "Current Market Value",
@@ -77,6 +82,76 @@ I18N = {
     },
 }
 
+
+@contextmanager
+def compat_container(border: bool = False):
+    """Graceful fallback for old Streamlit versions without border argument."""
+    try:
+        with st.container(border=border):
+            yield
+    except TypeError:
+        with st.container():
+            yield
+            if border:
+                st.markdown("---")
+
+
+def safe_dataframe(df: pd.DataFrame):
+    try:
+        st.dataframe(df, use_container_width=True)
+    except TypeError:
+        st.dataframe(df)
+
+
+def safe_plotly_chart(fig):
+    try:
+        st.plotly_chart(fig, use_container_width=True)
+    except TypeError:
+        st.plotly_chart(fig)
+
+
+def render_positions_editor(positions: pd.DataFrame, hint_text: str) -> pd.DataFrame:
+    if hasattr(st, "data_editor"):
+        kwargs = {
+            "num_rows": "dynamic",
+            "key": "positions_editor",
+        }
+        if hasattr(st, "column_config"):
+            kwargs["column_config"] = {
+                "code": st.column_config.TextColumn("Code"),
+                "name": st.column_config.TextColumn("Name"),
+                "shares": st.column_config.NumberColumn("Shares", min_value=0.0, step=100.0),
+                "cost_per_share": st.column_config.NumberColumn("Cost/Share", min_value=0.0, step=0.01),
+            }
+        try:
+            return st.data_editor(positions, use_container_width=True, **kwargs)
+        except TypeError:
+            return st.data_editor(positions, **kwargs)
+
+    if hasattr(st, "experimental_data_editor"):
+        try:
+            return st.experimental_data_editor(positions, num_rows="dynamic", key="positions_editor")
+        except TypeError:
+            return st.experimental_data_editor(positions, key="positions_editor")
+
+    st.info(hint_text)
+    csv_text = st.text_area(
+        "CSV",
+        value=positions.to_csv(index=False),
+        height=180,
+        key="positions_csv_editor",
+    )
+    try:
+        parsed = pd.read_csv(StringIO(csv_text))
+    except Exception:
+        st.warning("CSV parse failed. Reverting to previous holdings.")
+        return positions
+
+    required_cols = ["code", "name", "shares", "cost_per_share"]
+    for col in required_cols:
+        if col not in parsed.columns:
+            parsed[col] = "" if col in {"code", "name"} else 0.0
+    return parsed[required_cols]
 
 
 def money(x: float) -> str:
@@ -101,14 +176,14 @@ with col_tip:
 st.title(L["app_title"])
 st.caption(L["app_subtitle"])
 
-with st.container(border=True):
+with compat_container(border=True):
     st.subheader(L["hero_title"])
     st.write(L["hero_desc"])
     bullet_cols = st.columns(len(L["hero_bullets"]))
     for i, b in enumerate(L["hero_bullets"]):
         bullet_cols[i].success(f"✓ {b}")
 
-with st.container(border=True):
+with compat_container(border=True):
     st.subheader(L["empty_title"])
     st.write(L["empty_desc"])
     for step in L["guide_steps"]:
@@ -121,7 +196,7 @@ query = st.text_input(L["query_input"], placeholder="161725 / 白酒 / consumer"
 fund_results = search_fund(query)
 
 show_cols = ["code", "name_zh", "name_en", "nav", "est_nav", "day_change_pct"]
-st.dataframe(
+safe_dataframe(
     fund_results[show_cols].rename(
         columns={
             "code": "Code",
@@ -131,8 +206,7 @@ st.dataframe(
             "est_nav": "Est NAV",
             "day_change_pct": "Day %",
         }
-    ),
-    use_container_width=True,
+    )
 )
 
 st.header(L["holdings_header"])
@@ -142,18 +216,7 @@ if "positions" not in st.session_state:
 if st.button(L["use_default"]):
     st.session_state.positions = get_default_positions()
 
-edited_positions = st.data_editor(
-    st.session_state.positions,
-    num_rows="dynamic",
-    use_container_width=True,
-    key="positions_editor",
-    column_config={
-        "code": st.column_config.TextColumn("Code"),
-        "name": st.column_config.TextColumn("Name"),
-        "shares": st.column_config.NumberColumn("Shares", min_value=0.0, step=100.0),
-        "cost_per_share": st.column_config.NumberColumn("Cost/Share", min_value=0.0, step=0.01),
-    },
-)
+edited_positions = render_positions_editor(st.session_state.positions, L["fallback_editor_hint"])
 st.session_state.positions = edited_positions
 
 positions_clean = edited_positions.dropna(subset=["code", "shares", "cost_per_share"]).copy()
@@ -182,7 +245,7 @@ analysis_cols = [
     "total_profit",
     "profit_rate",
 ]
-st.dataframe(
+safe_dataframe(
     position_metrics[analysis_cols].rename(
         columns={
             "code": "Code",
@@ -196,8 +259,7 @@ st.dataframe(
             "total_profit": "Total PnL",
             "profit_rate": "Return Rate",
         }
-    ),
-    use_container_width=True,
+    )
 )
 
 st.header(L["charts_header"])
@@ -212,7 +274,7 @@ with left:
     fig_trend.add_trace(go.Scatter(x=trend_df["date"], y=trend_df["est_nav"], mode="lines", name="Est NAV"))
     fig_trend.update_layout(height=360, margin=dict(l=20, r=20, t=20, b=20), legend=dict(orientation="h"))
     fig_trend.update_xaxes(nticks=8)
-    st.plotly_chart(fig_trend, use_container_width=True)
+    safe_plotly_chart(fig_trend)
 
 with right:
     st.subheader(L["chart_profit"])
@@ -227,7 +289,7 @@ with right:
             color_continuous_scale="RdYlGn",
         )
         fig_bar.update_layout(height=360, margin=dict(l=20, r=20, t=20, b=20), xaxis_title=None, yaxis_title=None)
-        st.plotly_chart(fig_bar, use_container_width=True)
+        safe_plotly_chart(fig_bar)
 
 st.header(L["insights_header"])
 for insight in generate_auto_insights(position_metrics, language=language):
