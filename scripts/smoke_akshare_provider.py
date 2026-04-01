@@ -29,6 +29,12 @@ def main() -> int:
         print(f"snapshots_rows={len(snapshots)}")
         if snapshots.empty:
             print("warning=AKShare returned empty snapshot table")
+            return 0
+        if "est_nav" not in snapshots.columns:
+            print("akshare_error=missing est_nav column")
+            return 1
+        est_nav_fallback_rows = int((snapshots["est_nav"] == snapshots["nav"]).sum())
+        print(f"est_nav_fallback_rows={est_nav_fallback_rows}")
         return 0
     except Exception as exc:  # noqa: BLE001
         print(f"akshare_error={exc}")
