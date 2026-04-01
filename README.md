@@ -106,6 +106,7 @@ streamlit run app.py
 - `smoke_akshare_provider.py` 正常输出 provider 信息且进程退出码为 0；
 - 若 AKShare 可用，应看到 `provider=AKShareFundProvider` 与 `snapshots_rows=...`；
 - 可通过 `provider_note=...` 查看最近一次 AKShare 快照实际返回列（便于字段兼容调试）；
+- 如需更详细调试，请在终端观察 provider 打印的 AKShare 原始列名日志；
 - 若 AKShare 不可用（网络/字段变更/依赖问题），脚本会打印 `akshare_error=...`，并验证 mock fallback 可用；
 - 页面端同样会显示“数据源加载失败，已回退到本地 mock 数据。原因：...”的友好提示。
 

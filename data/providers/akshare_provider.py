@@ -163,7 +163,10 @@ class AKShareFundProvider:
 
         merged = catalog_df.merge(snap, on="code", how="inner")
         if "name_zh_from_snapshot" in merged.columns:
-            merged["name_zh"] = merged["name_zh"].fillna("").where(merged["name_zh"].fillna("") != "", merged["name_zh_from_snapshot"])
+            merged["name_zh"] = merged["name_zh"].fillna("").where(
+                merged["name_zh"].fillna("") != "",
+                merged["name_zh_from_snapshot"],
+            )
             merged["name_en"] = merged["name_zh"]
 
         if merged.empty:
