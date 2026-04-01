@@ -12,6 +12,7 @@ REQUIRED_PACKAGES: Dict[str, str] = {
     "numpy": "1.23+",
     "plotly": "5.15+",
     "altair": "4.2+",
+    "akshare": "1.16+",
 }
 
 
