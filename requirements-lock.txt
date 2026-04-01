@@ -1,5 +1,5 @@
 # Locked dependency set verified for Python 3.11
-streamlit==1.31.1
+streamlit==1.54.0
 pandas==2.1.4
 numpy==1.26.4
 plotly==5.19.0
@@ -9,4 +9,4 @@ akshare>=1.16,<2
 # Streamlit runtime dependencies that are common conflict points
 pyarrow==15.0.2
 tenacity==8.2.3
-protobuf==4.25.3
+protobuf==5.29.6
