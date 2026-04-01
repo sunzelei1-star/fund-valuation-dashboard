@@ -45,6 +45,7 @@ I18N = {
         "source_mode": "数据模式",
         "source_time": "更新时间(UTC)",
         "mock_flag": "当前为示例/估算数据，非真实交易参考。",
+        "provider_load_failed": "数据源加载失败，已回退到本地 mock 数据。原因：",
         "empty_holdings": "暂无持仓数据。",
         "delete_help": "在表格中删除行即可删除单只基金。",
         "left_panel": "左侧：查询与持仓操作",
@@ -82,6 +83,7 @@ I18N = {
         "source_mode": "Mode",
         "source_time": "Updated at (UTC)",
         "mock_flag": "Current values are sample/estimated data and not trading advice.",
+        "provider_load_failed": "Provider load failed. Fallback to local mock data. Reason:",
         "empty_holdings": "No holdings yet.",
         "delete_help": "Delete a single fund by removing a row from the editable table.",
         "left_panel": "Left: lookup & holdings operations",
@@ -182,7 +184,14 @@ with compat_container(border=True):
     for i, item in enumerate(L["hero_bullets"]):
         cols[i].success(f"✓ {item}")
 
-fund_snapshot = provider.get_snapshots()
+try:
+    fund_snapshot = provider.get_snapshots()
+except Exception as exc:  # noqa: BLE001
+    from data.providers.mock_provider import LocalMockFundProvider
+
+    st.error(f"{L['provider_load_failed']} {exc}")
+    provider = LocalMockFundProvider()
+    fund_snapshot = provider.get_snapshots()
 if "positions" not in st.session_state:
     st.session_state.positions = provider.get_default_positions()
 
@@ -193,7 +202,11 @@ with left_col:
         st.caption(L["left_panel"])
         st.subheader(L["query_header"])
         query = st.text_input(L["query_input"], placeholder="161725 / 白酒 / consumer")
-        fund_results = provider.search(query)
+        try:
+            fund_results = provider.search(query)
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"{L['provider_load_failed']} {exc}")
+            fund_results = fund_snapshot
         show_cols = ["code", "name_zh", "name_en", "category", "nav", "est_nav", "day_change_pct"]
         safe_dataframe(
             fund_results[show_cols].rename(
@@ -216,8 +229,11 @@ with left_col:
 
         with st.form("add_position_form", clear_on_submit=True):
             st.markdown(f"**{L['add_position']}**")
-            available_codes = fund_snapshot["code"].tolist()
-            selected_code = st.selectbox("Code", available_codes, key="add_code")
+            fund_snapshot["add_label"] = fund_snapshot["code"] + " | " + (
+                fund_snapshot["name_en"] if language == "en" else fund_snapshot["name_zh"]
+            )
+            selected_label = st.selectbox("Code", fund_snapshot["add_label"].tolist(), key="add_code")
+            selected_code = selected_label.split(" | ")[0]
             selected_row = fund_snapshot[fund_snapshot["code"] == selected_code].iloc[0]
             default_name = selected_row["name_en"] if language == "en" else selected_row["name_zh"]
             col1, col2 = st.columns(2)

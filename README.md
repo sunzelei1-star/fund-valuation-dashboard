@@ -77,6 +77,38 @@ python scripts/preflight.py
 streamlit run app.py
 ```
 
+### 切换数据源 Provider
+
+默认使用本地 mock provider。若要切到 AKShare 真实开放式基金日净值快照：
+
+```bash
+export FUND_DATA_PROVIDER=akshare_live
+streamlit run app.py
+```
+
+说明：
+- `akshare_live` 使用 `ak.fund_name_em()` 作为基金主数据；
+- 使用 `ak.fund_open_fund_daily_em()` 作为开放式基金日净值快照；
+- 趋势图第一阶段仍可回退到 mock trend（用于保持交互和图表稳定性）。
+
+### 首次切换 `akshare_live` 的本地验证步骤
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+export FUND_DATA_PROVIDER=akshare_live
+python scripts/smoke_akshare_provider.py
+streamlit run app.py
+```
+
+验证要点：
+- `smoke_akshare_provider.py` 正常输出 provider 信息且进程退出码为 0；
+- 若 AKShare 可用，应看到 `provider=AKShareFundProvider` 与 `snapshots_rows=...`；
+- 可通过 `provider_note=...` 查看最近一次 AKShare 快照实际返回列（便于字段兼容调试）；
+- 若 AKShare 不可用（网络/字段变更/依赖问题），脚本会打印 `akshare_error=...`，并验证 mock fallback 可用；
+- 页面端同样会显示“数据源加载失败，已回退到本地 mock 数据。原因：...”的友好提示。
+
 ---
 
 ## 启动前自检说明
