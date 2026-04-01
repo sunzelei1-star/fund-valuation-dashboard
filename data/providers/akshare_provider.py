@@ -20,6 +20,10 @@ class AKShareFundProvider:
 
     CATALOG_TTL_SECONDS = 60 * 60 * 6
     SNAPSHOT_TTL_SECONDS = 60 * 5
+    SNAPSHOT_CODE_ALIASES = ("基金代码", "代码", "基金编码")
+    SNAPSHOT_NAV_ALIASES = ("单位净值", "最新净值", "净值")
+    SNAPSHOT_EST_NAV_ALIASES = ("估算净值", "估值", "实时估值")
+    SNAPSHOT_DAY_CHANGE_ALIASES = ("日增长率", "日涨幅", "涨跌幅")
 
     def __init__(self) -> None:
         self._catalog_cache: pd.DataFrame | None = None
@@ -74,26 +78,49 @@ class AKShareFundProvider:
             raise RuntimeError("未安装或无法导入 akshare，请先执行 pip install -r requirements.txt。")
         raw_df = ak.fund_open_fund_daily_em()
 
-        code_col = "基金代码" if "基金代码" in raw_df.columns else raw_df.columns[0]
-        nav_col = "单位净值" if "单位净值" in raw_df.columns else None
-        est_nav_col = "日增长率" if "日增长率" in raw_df.columns else None
+        code_col = self._pick_column(raw_df, self.SNAPSHOT_CODE_ALIASES)
+        nav_col = self._pick_column(raw_df, self.SNAPSHOT_NAV_ALIASES)
+        est_nav_col = self._pick_column(raw_df, self.SNAPSHOT_EST_NAV_ALIASES)
+        day_change_col = self._pick_column(raw_df, self.SNAPSHOT_DAY_CHANGE_ALIASES)
 
-        if nav_col is None or est_nav_col is None:
-            raise RuntimeError("AKShare 开放式基金快照字段缺失，无法解析单位净值或日增长率。")
+        if code_col is None:
+            code_col = raw_df.columns[0]
+        if nav_col is None:
+            raise RuntimeError("AKShare 开放式基金快照字段缺失，无法解析单位净值。")
 
         snap = pd.DataFrame(
             {
                 "code": raw_df[code_col].map(self._normalize_code),
                 "nav": pd.to_numeric(raw_df[nav_col], errors="coerce"),
-                "day_change_pct": pd.to_numeric(raw_df[est_nav_col], errors="coerce"),
+                "est_nav": pd.to_numeric(raw_df[est_nav_col], errors="coerce") if est_nav_col else pd.NA,
+                "day_change_pct": pd.to_numeric(raw_df[day_change_col], errors="coerce") if day_change_col else pd.NA,
             }
         )
-        snap = snap.dropna(subset=["nav", "day_change_pct"])
-        snap["est_nav"] = (snap["nav"] * (1 + snap["day_change_pct"] / 100)).round(4)
+        snap["est_nav"] = snap["est_nav"].fillna(snap["nav"])
+        change_based_est = (snap["nav"] * (1 + snap["day_change_pct"] / 100)).round(4)
+        snap["est_nav"] = snap["est_nav"].fillna(change_based_est)
+        snap["day_change_pct"] = snap["day_change_pct"].fillna(0.0)
+        snap = snap.dropna(subset=["nav", "est_nav"])
         snap = snap.drop_duplicates(subset=["code"], keep="first")
 
         merged = catalog_df.merge(snap, on="code", how="inner")
         return merged[["code", "name_zh", "name_en", "category", "nav", "est_nav", "day_change_pct"]]
+
+    @staticmethod
+    def _pick_column(df: pd.DataFrame, aliases: tuple[str, ...]) -> str | None:
+        for alias in aliases:
+            if alias in df.columns:
+                return alias
+        lowered = {str(col).strip().lower(): col for col in df.columns}
+        for alias in aliases:
+            key = alias.strip().lower()
+            if key in lowered:
+                return lowered[key]
+        for col in df.columns:
+            text = str(col)
+            if any(alias in text for alias in aliases):
+                return col
+        return None
 
     def get_catalog(self) -> pd.DataFrame:
         with self._lock:
