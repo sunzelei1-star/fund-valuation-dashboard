@@ -90,7 +90,8 @@ streamlit run app.py
 - `akshare_live` 使用 `ak.fund_name_em()` 作为基金主数据；
 - 使用 `ak.fund_open_fund_daily_em()` 作为开放式基金日净值快照；
 - 对 AKShare 快照字段做了别名与子串匹配（适配常见字段命名差异）；
-- 当 `est_nav` 缺失时自动回退 `nav`，并将 `day_change_pct` 缺失按 `0.0` 处理；
+- 优先识别官方估值字段；若缺失则按 `nav * (1 + day_change_pct)` 近似估算，仍缺失时回退 `nav`；
+- 快照中增加 `valuation_kind` 与 `est_nav_is_approx`，用于页面展示“官方估值/近似估值/净值快照”；
 - 趋势图第一阶段仍可回退到 mock trend（用于保持交互和图表稳定性）。
 
 ### 首次切换 `akshare_live` 的本地验证步骤

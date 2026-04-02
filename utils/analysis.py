@@ -9,9 +9,18 @@ def calc_position_metrics(positions: pd.DataFrame, snapshot_df: pd.DataFrame) ->
     if positions.empty:
         return positions
 
-    snapshot_cols = snapshot_df[["code", "name_zh", "name_en", "nav", "est_nav", "day_change_pct"]]
+    snapshot_cols = snapshot_df[
+        [col for col in ["code", "name_zh", "name_en", "nav", "est_nav", "day_change_pct", "valuation_kind", "est_nav_is_approx"] if col in snapshot_df.columns]
+    ]
     merged = positions.merge(snapshot_cols, on="code", how="left")
     merged["name"] = merged["name"].fillna(merged["name_zh"]).fillna(merged["name_en"]).fillna(merged["code"])
+    merged["nav"] = pd.to_numeric(merged["nav"], errors="coerce").fillna(0.0)
+    merged["est_nav"] = pd.to_numeric(merged.get("est_nav", merged["nav"]), errors="coerce").fillna(merged["nav"])
+    merged["day_change_pct"] = pd.to_numeric(merged.get("day_change_pct", 0.0), errors="coerce").fillna(0.0)
+    if "valuation_kind" not in merged.columns:
+        merged["valuation_kind"] = "nav_snapshot"
+    if "est_nav_is_approx" not in merged.columns:
+        merged["est_nav_is_approx"] = True
 
     merged["cost_value"] = merged["shares"] * merged["cost_per_share"]
     merged["market_value"] = merged["shares"] * merged["nav"]
