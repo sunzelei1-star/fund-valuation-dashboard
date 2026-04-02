@@ -39,11 +39,33 @@ I18N = {
         "chart_nav": "基金净值 / 估值趋势",
         "chart_profit": "持仓今日预估收益分布",
         "chart_fund": "图表基金",
+        "chart_date": "日期",
+        "chart_nav_axis": "净值",
+        "chart_today_pnl": "今日预估收益",
+        "hover_full_name": "基金全称",
+        "hover_val_kind": "估值类型",
         "insights_header": "自动分析结论",
         "source_header": "数据来源说明",
         "source_label": "数据来源",
         "source_mode": "数据模式",
         "source_time": "更新时间(UTC)",
+        "source_valuation": "估值类型",
+        "source_est_coverage": "估值覆盖率",
+        "official_est": "官方估值",
+        "approx_est": "估值近似",
+        "nav_snapshot": "净值快照",
+        "table_code": "代码",
+        "table_name_zh": "中文名称",
+        "table_name_en": "英文名称",
+        "table_category": "分类",
+        "table_nav": "净值",
+        "table_est_nav": "估值",
+        "table_day_pct": "日涨跌",
+        "table_shares": "份额",
+        "table_cost": "成本",
+        "table_today_pnl": "今日预估收益",
+        "table_total_pnl": "累计收益",
+        "table_return": "收益率",
         "mock_flag": "当前为示例/估算数据，非真实交易参考。",
         "provider_load_failed": "数据源加载失败，已回退到本地 mock 数据。原因：",
         "empty_holdings": "暂无持仓数据。",
@@ -77,11 +99,33 @@ I18N = {
         "chart_nav": "Fund NAV vs Estimated NAV Trend",
         "chart_profit": "Today's estimated PnL by position",
         "chart_fund": "Chart fund",
+        "chart_date": "Date",
+        "chart_nav_axis": "Value",
+        "chart_today_pnl": "Today's Estimated PnL",
+        "hover_full_name": "Full name",
+        "hover_val_kind": "Valuation type",
         "insights_header": "Automated Insights",
         "source_header": "Data Source",
         "source_label": "Source",
         "source_mode": "Mode",
         "source_time": "Updated at (UTC)",
+        "source_valuation": "Valuation Type",
+        "source_est_coverage": "Estimation Coverage",
+        "official_est": "Official estimate",
+        "approx_est": "Approximate estimate",
+        "nav_snapshot": "NAV snapshot",
+        "table_code": "Code",
+        "table_name_zh": "Name(ZH)",
+        "table_name_en": "Name(EN)",
+        "table_category": "Category",
+        "table_nav": "NAV",
+        "table_est_nav": "Est NAV",
+        "table_day_pct": "Day %",
+        "table_shares": "Shares",
+        "table_cost": "Cost/Share",
+        "table_today_pnl": "Today Est PnL",
+        "table_total_pnl": "Total PnL",
+        "table_return": "Return Rate",
         "mock_flag": "Current values are sample/estimated data and not trading advice.",
         "provider_load_failed": "Provider load failed. Fallback to local mock data. Reason:",
         "empty_holdings": "No holdings yet.",
@@ -109,6 +153,22 @@ def safe_dataframe(df: pd.DataFrame):
         st.dataframe(df, use_container_width=True)
     except TypeError:
         st.dataframe(df)
+
+
+def make_fund_short_name(name: str, code: str, language: str, limit: int = 10) -> str:
+    base = str(name).strip() if str(name).strip() else str(code)
+    if len(base) > limit:
+        base = f"{base[:limit]}…"
+    return f"{code}·{base}" if language == "zh" else f"{code} | {base}"
+
+
+def valuation_text(kind: str | None, language: str) -> str:
+    mapping = {
+        "official_estimate": I18N[language]["official_est"],
+        "approx_from_change": I18N[language]["approx_est"],
+        "nav_snapshot": I18N[language]["nav_snapshot"],
+    }
+    return mapping.get(str(kind), I18N[language]["nav_snapshot"])
 
 
 def safe_plotly_chart(fig):
@@ -152,13 +212,13 @@ def render_positions_editor(positions: pd.DataFrame, language: str) -> pd.DataFr
         "cost_per_share": "Cost/Share" if language == "en" else "持仓成本",
     }
 
-    kwargs = {"num_rows": "dynamic", "key": "positions_editor"}
+    kwargs = {"num_rows": "dynamic", "key": "positions_editor", "hide_index": True, "use_container_width": True}
     if hasattr(st, "column_config"):
         kwargs["column_config"] = {
-            "code": st.column_config.TextColumn(label_map["code"]),
-            "name": st.column_config.TextColumn(label_map["name"]),
-            "shares": st.column_config.NumberColumn(label_map["shares"], min_value=0.0, step=100.0),
-            "cost_per_share": st.column_config.NumberColumn(label_map["cost_per_share"], min_value=0.0, step=0.01),
+            "code": st.column_config.TextColumn(label_map["code"], width="small"),
+            "name": st.column_config.TextColumn(label_map["name"], width="medium"),
+            "shares": st.column_config.NumberColumn(label_map["shares"], min_value=0.0, step=100.0, format="%.0f", width="small"),
+            "cost_per_share": st.column_config.NumberColumn(label_map["cost_per_share"], min_value=0.0, step=0.01, format="%.4f", width="small"),
         }
     edited = st.data_editor(positions, **kwargs)
     return ensure_position_schema(edited)
@@ -208,18 +268,21 @@ with left_col:
             st.error(f"{L['provider_load_failed']} {exc}")
             fund_results = fund_snapshot
         show_cols = ["code", "name_zh", "name_en", "category", "nav", "est_nav", "day_change_pct"]
-        safe_dataframe(
-            fund_results[show_cols].rename(
-                columns={
-                    "code": "Code",
-                    "name_zh": "Name(ZH)",
-                    "name_en": "Name(EN)",
-                    "category": "Category",
-                    "nav": "NAV",
-                    "est_nav": "Est NAV",
-                    "day_change_pct": "Day %",
-                }
-            )
+        show_df = fund_results[show_cols].rename(
+            columns={
+                "code": L["table_code"],
+                "name_zh": L["table_name_zh"],
+                "name_en": L["table_name_en"],
+                "category": L["table_category"],
+                "nav": L["table_nav"],
+                "est_nav": L["table_est_nav"],
+                "day_change_pct": L["table_day_pct"],
+            }
+        )
+        st.dataframe(
+            show_df.style.format({L["table_nav"]: "{:.4f}", L["table_est_nav"]: "{:.4f}", L["table_day_pct"]: "{:.2f}%"}),
+            hide_index=True,
+            use_container_width=True,
         )
 
     with compat_container(border=True):
@@ -276,6 +339,13 @@ with right_col:
         s1.metric(L["source_label"], source_name)
         s2.metric(L["source_mode"], meta.data_mode)
         s3.metric(L["source_time"], meta.updated_at.strftime("%Y-%m-%d %H:%M:%S"))
+        if not fund_snapshot.empty:
+            official_ratio = (fund_snapshot.get("valuation_kind", pd.Series(dtype=str)) == "official_estimate").mean()
+            official_ratio = 0.0 if pd.isna(official_ratio) else float(official_ratio)
+            dominant_kind = "official_estimate" if official_ratio >= 0.5 else "approx_from_change"
+            s4, s5 = st.columns(2)
+            s4.metric(L["source_valuation"], valuation_text(dominant_kind, language))
+            s5.metric(L["source_est_coverage"], f"{official_ratio * 100:.1f}%")
         st.caption(note)
         if meta.data_mode != "live":
             st.warning(L["mock_flag"])
@@ -302,21 +372,35 @@ with right_col:
             "total_profit",
             "profit_rate",
         ]
-        safe_dataframe(
-            position_metrics[analysis_cols].rename(
-                columns={
-                    "code": "Code",
-                    "name": "Name",
-                    "shares": "Shares",
-                    "cost_per_share": "Cost/Share",
-                    "nav": "NAV",
-                    "est_nav": "Est NAV",
-                    "day_change_pct": "Day %",
-                    "today_est_profit": "Today Est PnL",
-                    "total_profit": "Total PnL",
-                    "profit_rate": "Return Rate",
+        analysis_df = position_metrics[analysis_cols].rename(
+            columns={
+                "code": L["table_code"],
+                "name": "Name",
+                "shares": L["table_shares"],
+                "cost_per_share": L["table_cost"],
+                "nav": L["table_nav"],
+                "est_nav": L["table_est_nav"],
+                "day_change_pct": L["table_day_pct"],
+                "today_est_profit": L["table_today_pnl"],
+                "total_profit": L["table_total_pnl"],
+                "profit_rate": L["table_return"],
+            }
+        )
+        st.dataframe(
+            analysis_df.style.format(
+                {
+                    L["table_shares"]: "{:.0f}",
+                    L["table_cost"]: "{:.4f}",
+                    L["table_nav"]: "{:.4f}",
+                    L["table_est_nav"]: "{:.4f}",
+                    L["table_day_pct"]: "{:.2f}%",
+                    L["table_today_pnl"]: "¥{:.2f}",
+                    L["table_total_pnl"]: "¥{:.2f}",
+                    L["table_return"]: "{:.2%}",
                 }
-            )
+            ),
+            hide_index=True,
+            use_container_width=True,
         )
 
     with compat_container(border=True):
@@ -325,14 +409,21 @@ with right_col:
 
         with trend_col:
             st.markdown(f"**{L['chart_nav']}**")
-            fund_snapshot["label"] = fund_snapshot["code"] + " | " + (
-                fund_snapshot["name_en"] if language == "en" else fund_snapshot["name_zh"]
+            fund_snapshot["label"] = fund_snapshot.apply(
+                lambda row: make_fund_short_name(
+                    row["name_en"] if language == "en" else row["name_zh"],
+                    row["code"],
+                    language,
+                    limit=9,
+                ),
+                axis=1,
             )
             selected_label = st.selectbox(L["chart_fund"], fund_snapshot["label"].tolist())
-            chart_code = selected_label.split(" | ")[0]
+            chart_code = selected_label.split("·")[0] if language == "zh" else selected_label.split(" | ")[0]
             trend_df = provider.get_trend(chart_code, days=120)
             name_row = fund_snapshot[fund_snapshot["code"] == chart_code].iloc[0]
             display_name = name_row["name_en"] if language == "en" else name_row["name_zh"]
+            short_name = make_fund_short_name(display_name, chart_code, language)
 
             fig_trend = go.Figure()
             fig_trend.add_trace(
@@ -341,7 +432,12 @@ with right_col:
                     y=trend_df["nav"],
                     mode="lines",
                     name="NAV",
-                    hovertemplate=f"{display_name} ({chart_code})<br>Date=%{{x}}<br>NAV=%{{y:.4f}}<extra></extra>",
+                    line=dict(width=2.4),
+                    hovertemplate=(
+                        f"{L['hover_full_name']}: {display_name}<br>"
+                        f"{L['table_code']}: {chart_code}<br>"
+                        f"{L['chart_date']}=%{{x}}<br>NAV=%{{y:.4f}}<extra></extra>"
+                    ),
                 )
             )
             fig_trend.add_trace(
@@ -350,18 +446,24 @@ with right_col:
                     y=trend_df["est_nav"],
                     mode="lines",
                     name="Est NAV",
-                    hovertemplate=f"{display_name} ({chart_code})<br>Date=%{{x}}<br>Est NAV=%{{y:.4f}}<extra></extra>",
+                    line=dict(width=2.2, dash="dot"),
+                    hovertemplate=(
+                        f"{L['hover_full_name']}: {display_name}<br>"
+                        f"{L['table_code']}: {chart_code}<br>"
+                        f"{L['chart_date']}=%{{x}}<br>Est NAV=%{{y:.4f}}<extra></extra>"
+                    ),
                 )
             )
             fig_trend.update_layout(
                 height=340,
-                margin=dict(l=20, r=20, t=10, b=20),
+                title=dict(text=short_name, font=dict(size=14)),
+                margin=dict(l=20, r=20, t=40, b=20),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-                xaxis_title=None,
-                yaxis_title=None,
+                xaxis_title=L["chart_date"],
+                yaxis_title=L["chart_nav_axis"],
                 template=plotly_template,
             )
-            fig_trend.update_xaxes(nticks=6)
+            fig_trend.update_xaxes(nticks=6, tickformat="%m-%d", showgrid=False)
             safe_plotly_chart(fig_trend)
 
         with bar_col:
@@ -370,10 +472,8 @@ with right_col:
                 st.warning(L["empty_holdings"])
             else:
                 chart_data = position_metrics.copy()
-                chart_data["display_name"] = chart_data.apply(
-                    lambda row: f"{row['name']} ({row['code']})",
-                    axis=1,
-                )
+                chart_data["display_name"] = chart_data.apply(lambda row: make_fund_short_name(row["name"], row["code"], language, 8), axis=1)
+                chart_data["valuation_kind_label"] = chart_data["valuation_kind"].map(lambda x: valuation_text(x, language))
                 fig_bar = px.bar(
                     chart_data,
                     x="display_name",
@@ -385,6 +485,9 @@ with right_col:
                         "code": True,
                         "name": True,
                         "shares": ":.0f",
+                        "nav": ":.4f",
+                        "est_nav": ":.4f",
+                        "valuation_kind_label": True,
                         "today_est_profit": ":.2f",
                         "profit_rate": ":.2%",
                     },
@@ -393,10 +496,11 @@ with right_col:
                     height=340,
                     margin=dict(l=20, r=20, t=10, b=20),
                     xaxis_title=None,
-                    yaxis_title=None,
+                    yaxis_title=L["chart_today_pnl"],
+                    coloraxis_showscale=False,
                     template=plotly_template,
                 )
-                fig_bar.update_xaxes(tickangle=-20)
+                fig_bar.update_xaxes(tickangle=-32)
                 safe_plotly_chart(fig_bar)
 
     with compat_container(border=True):
