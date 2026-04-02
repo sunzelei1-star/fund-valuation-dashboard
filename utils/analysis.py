@@ -5,30 +5,95 @@ from __future__ import annotations
 import pandas as pd
 
 
+PRO_INPUT_MODE = "pro"
+SIMPLE_INPUT_MODE = "simple"
+
+
+def _ensure_position_schema(positions: pd.DataFrame) -> pd.DataFrame:
+    wanted = [
+        "account",
+        "code",
+        "name",
+        "input_mode",
+        "shares",
+        "cost_per_share",
+        "invested_amount",
+        "holding_profit",
+    ]
+    df = positions.copy()
+    for col in wanted:
+        if col not in df.columns:
+            df[col] = "" if col in {"account", "code", "name", "input_mode"} else 0.0
+
+    df["account"] = df["account"].astype(str)
+    df["code"] = df["code"].astype(str)
+    df["name"] = df["name"].astype(str)
+    df["input_mode"] = df["input_mode"].replace("", PRO_INPUT_MODE).fillna(PRO_INPUT_MODE)
+    for num_col in ["shares", "cost_per_share", "invested_amount", "holding_profit"]:
+        df[num_col] = pd.to_numeric(df[num_col], errors="coerce").fillna(0.0)
+
+    return df[wanted]
+
+
 def calc_position_metrics(positions: pd.DataFrame, snapshot_df: pd.DataFrame) -> pd.DataFrame:
     if positions.empty:
-        return positions
+        return _ensure_position_schema(positions)
 
+    positions = _ensure_position_schema(positions)
     snapshot_cols = snapshot_df[
-        [col for col in ["code", "name_zh", "name_en", "nav", "est_nav", "day_change_pct", "valuation_kind", "est_nav_is_approx"] if col in snapshot_df.columns]
+        [
+            col
+            for col in [
+                "code",
+                "name_zh",
+                "name_en",
+                "nav",
+                "est_nav",
+                "day_change_pct",
+                "valuation_kind",
+                "est_nav_is_approx",
+                "snapshot_time",
+            ]
+            if col in snapshot_df.columns
+        ]
     ]
     merged = positions.merge(snapshot_cols, on="code", how="left")
-    merged["name"] = merged["name"].fillna(merged["name_zh"]).fillna(merged["name_en"]).fillna(merged["code"])
+    merged["name"] = merged["name"].fillna(merged.get("name_zh")).fillna(merged.get("name_en")).fillna(merged["code"])
     merged["nav"] = pd.to_numeric(merged["nav"], errors="coerce").fillna(0.0)
     merged["est_nav"] = pd.to_numeric(merged.get("est_nav", merged["nav"]), errors="coerce").fillna(merged["nav"])
     merged["day_change_pct"] = pd.to_numeric(merged.get("day_change_pct", 0.0), errors="coerce").fillna(0.0)
+    merged["snapshot_time"] = merged.get("snapshot_time", "").fillna("")
     if "valuation_kind" not in merged.columns:
         merged["valuation_kind"] = "nav_snapshot"
     if "est_nav_is_approx" not in merged.columns:
         merged["est_nav_is_approx"] = True
 
-    merged["cost_value"] = merged["shares"] * merged["cost_per_share"]
-    merged["market_value"] = merged["shares"] * merged["nav"]
-    merged["est_market_value"] = merged["shares"] * merged["est_nav"]
+    pro_mask = merged["input_mode"].eq(PRO_INPUT_MODE)
+    simple_mask = merged["input_mode"].eq(SIMPLE_INPUT_MODE)
 
+    merged.loc[pro_mask, "cost_value"] = merged.loc[pro_mask, "shares"] * merged.loc[pro_mask, "cost_per_share"]
+    merged.loc[pro_mask, "market_value"] = merged.loc[pro_mask, "shares"] * merged.loc[pro_mask, "nav"]
+
+    merged.loc[simple_mask, "market_value"] = merged.loc[simple_mask, "invested_amount"]
+    merged.loc[simple_mask, "cost_value"] = merged.loc[simple_mask, "invested_amount"] - merged.loc[simple_mask, "holding_profit"]
+    merged["cost_value"] = merged["cost_value"].clip(lower=0.0)
+
+    synthetic_shares = (merged["market_value"] / merged["nav"]).replace([float("inf")], 0.0).fillna(0.0)
+    merged.loc[simple_mask, "shares"] = synthetic_shares[simple_mask]
+    synthetic_cost = (merged["cost_value"] / merged["shares"]).replace([float("inf")], 0.0).fillna(0.0)
+    merged.loc[simple_mask, "cost_per_share"] = synthetic_cost[simple_mask]
+
+    merged["est_market_value"] = merged["shares"] * merged["est_nav"]
     merged["today_est_profit"] = merged["est_market_value"] - merged["market_value"]
     merged["total_profit"] = merged["market_value"] - merged["cost_value"]
-    merged["profit_rate"] = (merged["total_profit"] / merged["cost_value"]).replace([float("inf")], 0.0)
+    merged["profit_rate"] = (merged["total_profit"] / merged["cost_value"]).replace([float("inf")], 0.0).fillna(0.0)
+    merged["is_profit"] = merged["total_profit"] >= 0
+
+    total_today = merged["today_est_profit"].sum()
+    if abs(total_today) < 1e-12:
+        merged["today_contribution_rate"] = 0.0
+    else:
+        merged["today_contribution_rate"] = merged["today_est_profit"] / total_today
 
     return merged
 
@@ -42,6 +107,7 @@ def calc_portfolio_kpis(position_metrics: pd.DataFrame) -> dict:
             "total_profit": 0.0,
             "total_return_rate": 0.0,
             "volatility_flag": "N/A",
+            "approx_position_ratio": 0.0,
         }
 
     total_cost = position_metrics["cost_value"].sum()
@@ -49,6 +115,7 @@ def calc_portfolio_kpis(position_metrics: pd.DataFrame) -> dict:
     today_est_profit = position_metrics["today_est_profit"].sum()
     total_profit = position_metrics["total_profit"].sum()
     return_rate = total_profit / total_cost if total_cost else 0.0
+    approx_ratio = position_metrics["est_nav_is_approx"].mean() if "est_nav_is_approx" in position_metrics.columns else 1.0
 
     mean_abs_day_move = position_metrics["day_change_pct"].abs().mean()
     if mean_abs_day_move < 0.8:
@@ -65,7 +132,21 @@ def calc_portfolio_kpis(position_metrics: pd.DataFrame) -> dict:
         "total_profit": float(total_profit),
         "total_return_rate": float(return_rate),
         "volatility_flag": volatility_flag,
+        "approx_position_ratio": float(0.0 if pd.isna(approx_ratio) else approx_ratio),
     }
+
+
+def calc_account_kpis(position_metrics: pd.DataFrame) -> pd.DataFrame:
+    if position_metrics.empty:
+        return pd.DataFrame(columns=["account", "total_cost", "total_market", "today_est_profit", "total_profit", "total_return_rate"])
+
+    grouped = (
+        position_metrics.groupby("account", dropna=False)
+        .agg(total_cost=("cost_value", "sum"), total_market=("market_value", "sum"), today_est_profit=("today_est_profit", "sum"), total_profit=("total_profit", "sum"))
+        .reset_index()
+    )
+    grouped["total_return_rate"] = (grouped["total_profit"] / grouped["total_cost"]).replace([float("inf")], 0.0).fillna(0.0)
+    return grouped
 
 
 def generate_auto_insights(position_metrics: pd.DataFrame, language: str = "zh") -> list[str]:
@@ -79,18 +160,38 @@ def generate_auto_insights(position_metrics: pd.DataFrame, language: str = "zh")
     winner = position_metrics.loc[position_metrics["today_est_profit"].idxmax()]
     loser = position_metrics.loc[position_metrics["today_est_profit"].idxmin()]
     kpis = calc_portfolio_kpis(position_metrics)
+    by_account = calc_account_kpis(position_metrics)
+    max_contrib = by_account.loc[by_account["today_est_profit"].idxmax()] if not by_account.empty else None
+    top_rr = by_account.loc[by_account["total_return_rate"].idxmax()] if not by_account.empty else None
+    low_rr = by_account.loc[by_account["total_return_rate"].idxmin()] if not by_account.empty else None
 
     if language == "zh":
-        return [
-            f"今日贡献最大：{winner['name']}，预估贡献 {winner['today_est_profit']:.2f} 元。",
-            f"今日拖累最大：{loser['name']}，预估影响 {loser['today_est_profit']:.2f} 元。",
+        insights = [
+            f"今日贡献最大基金：{winner['name']}，预估贡献 {winner['today_est_profit']:.2f} 元。",
+            f"今日拖累最大基金：{loser['name']}，预估影响 {loser['today_est_profit']:.2f} 元。",
             f"组合波动等级：{kpis['volatility_flag']}（基于持仓基金当日涨跌幅绝对值均值）。",
-            "风险提示：估值并非最终净值，短期波动不代表长期趋势，请结合仓位控制。",
+            f"近似估值仓位占比：{kpis['approx_position_ratio'] * 100:.1f}%。",
         ]
+        if max_contrib is not None:
+            insights.append(f"账户贡献最大：{max_contrib['account']}，今日预估贡献 {max_contrib['today_est_profit']:.2f} 元。")
+        if top_rr is not None and low_rr is not None:
+            insights.append(
+                f"账户收益率最高/最低：{top_rr['account']}({top_rr['total_return_rate']:.2%}) / {low_rr['account']}({low_rr['total_return_rate']:.2%})。"
+            )
+        insights.append("风险提示：估值并非最终净值，短期波动不代表长期趋势，请结合仓位控制。")
+        return insights
 
-    return [
-        f"Top contributor today: {winner['name']} with an estimated gain of {winner['today_est_profit']:.2f}.",
-        f"Largest drag today: {loser['name']} with an estimated impact of {loser['today_est_profit']:.2f}.",
-        f"Portfolio volatility level: {kpis['volatility_flag']} (based on average absolute daily changes).",
-        "Risk note: estimated NAV is not final NAV; avoid overreacting to one-day moves.",
+    insights = [
+        f"Top fund contributor today: {winner['name']} ({winner['today_est_profit']:.2f}).",
+        f"Largest fund drag today: {loser['name']} ({loser['today_est_profit']:.2f}).",
+        f"Portfolio volatility level: {kpis['volatility_flag']} (from average absolute day change).",
+        f"Approximate-valuation position ratio: {kpis['approx_position_ratio'] * 100:.1f}%.",
     ]
+    if max_contrib is not None:
+        insights.append(f"Largest account contributor: {max_contrib['account']} ({max_contrib['today_est_profit']:.2f}).")
+    if top_rr is not None and low_rr is not None:
+        insights.append(
+            f"Best/Worst account return: {top_rr['account']}({top_rr['total_return_rate']:.2%}) / {low_rr['account']}({low_rr['total_return_rate']:.2%})."
+        )
+    insights.append("Risk note: estimated NAV is not final NAV; avoid overreacting to one-day moves.")
+    return insights

@@ -123,6 +123,53 @@ class AKShareFundProvider:
             ]
         ]
 
+    def _fetch_nav_trend(self, code: str) -> pd.DataFrame:
+        if ak is None:
+            raise RuntimeError("akshare unavailable")
+        raw_df = ak.fund_open_fund_info_em(symbol=code, indicator="单位净值走势")
+        date_col = self._pick_column(raw_df, ("净值日期", "日期", "x", "date")) or raw_df.columns[0]
+        nav_col = self._pick_column(raw_df, ("单位净值", "净值", "y", "value")) or raw_df.columns[-1]
+        trend = pd.DataFrame({"date": pd.to_datetime(raw_df[date_col], errors="coerce"), "nav": pd.to_numeric(raw_df[nav_col], errors="coerce")})
+        trend = trend.dropna(subset=["date", "nav"]).sort_values("date").drop_duplicates(subset=["date"], keep="last")
+        return trend
+
+    def _fetch_est_trend_optional(self, code: str) -> pd.DataFrame | None:
+        if ak is None:
+            return None
+        # Different AKShare versions expose different APIs; treat estimate history as optional.
+        candidates = [
+            ("fund_value_estimation_em", {"symbol": code}),
+            ("fund_value_estimation_em", {}),
+            ("fund_estimation_em", {"symbol": code}),
+        ]
+        for fn_name, kwargs in candidates:
+            fn = getattr(ak, fn_name, None)
+            if fn is None:
+                continue
+            try:
+                raw_df = fn(**kwargs)
+                if raw_df is None or raw_df.empty:
+                    continue
+                code_col = self._pick_column(raw_df, ("基金代码", "代码", "symbol"))
+                if code_col is not None:
+                    raw_df = raw_df[raw_df[code_col].astype(str).str.contains(code)]
+                date_col = self._pick_column(raw_df, ("净值日期", "日期", "更新时间", "date", "x"))
+                est_col = self._pick_column(raw_df, ("估算净值", "估值", "最新估值", "y", "value"))
+                if date_col is None or est_col is None:
+                    continue
+                est_df = pd.DataFrame(
+                    {
+                        "date": pd.to_datetime(raw_df[date_col], errors="coerce"),
+                        "est_nav": pd.to_numeric(raw_df[est_col], errors="coerce"),
+                    }
+                )
+                est_df = est_df.dropna(subset=["date", "est_nav"]).sort_values("date").drop_duplicates(subset=["date"], keep="last")
+                if not est_df.empty:
+                    return est_df
+            except Exception:
+                continue
+        return None
+
     @staticmethod
     def _pick_column(df: pd.DataFrame, aliases: tuple[str, ...]) -> str | None:
         for alias in aliases:
@@ -191,7 +238,25 @@ class AKShareFundProvider:
 
     def get_trend(self, code: str, days: int = 90) -> pd.DataFrame:
         normalized_code = self._normalize_code(code)
-        return self._trend_fallback_provider.get_trend(normalized_code, days=days)
+        try:
+            nav_df = self._fetch_nav_trend(normalized_code)
+            est_df = self._fetch_est_trend_optional(normalized_code)
+            trend = nav_df.copy()
+            has_est_history = est_df is not None and not est_df.empty
+            if has_est_history:
+                trend = trend.merge(est_df, on="date", how="left")
+            trend["est_nav"] = pd.to_numeric(trend.get("est_nav", trend["nav"]), errors="coerce")
+            trend["est_nav"] = trend["est_nav"].fillna(trend["nav"])
+            trend["date"] = pd.to_datetime(trend["date"]).dt.date
+            trend["has_est_history"] = has_est_history
+            trend["trend_source"] = "akshare"
+            trend = trend.sort_values("date").tail(days).reset_index(drop=True)
+            return trend[["date", "nav", "est_nav", "has_est_history", "trend_source"]]
+        except Exception:
+            fallback = self._trend_fallback_provider.get_trend(normalized_code, days=days).copy()
+            fallback["has_est_history"] = True
+            fallback["trend_source"] = "fallback_mock"
+            return fallback[["date", "nav", "est_nav", "has_est_history", "trend_source"]]
 
     def get_default_positions(self) -> pd.DataFrame:
         snapshots = self.get_snapshots()
@@ -201,20 +266,25 @@ class AKShareFundProvider:
 
         positions = picks[["code", "name_zh"]].copy()
         positions = positions.rename(columns={"name_zh": "name"})
-        positions["shares"] = [1000.0, 1200.0, 800.0, 1500.0][: len(positions)]
-        positions["cost_per_share"] = 1.0
-        return positions[["code", "name", "shares", "cost_per_share"]]
+        positions["account"] = ["主账户", "支付宝", "主账户", "家庭账户"][: len(positions)]
+        positions["input_mode"] = ["pro", "pro", "simple", "simple"][: len(positions)]
+        positions["shares"] = [1000.0, 1200.0, 0.0, 0.0][: len(positions)]
+        positions["cost_per_share"] = [1.0, 1.05, 0.0, 0.0][: len(positions)]
+        positions["invested_amount"] = [0.0, 0.0, 5000.0, 3600.0][: len(positions)]
+        positions["holding_profit"] = [0.0, 0.0, 420.0, -180.0][: len(positions)]
+        return positions[["account", "code", "name", "input_mode", "shares", "cost_per_share", "invested_amount", "holding_profit"]]
 
     def get_meta(self) -> ProviderMeta:
         updated_at = self._last_success_at or self._now_utc()
         notes_zh = (
-            "AKShare 开放式基金净值快照（通常盘后更新）。若接口包含估算净值字段则标记为官方估值，"
-            "否则将以净值或涨跌幅近似估算 est_nav。"
+            "AKShare 开放式基金净值快照（通常盘后更新）+ 基金单位净值历史走势。"
+            "若接口包含估算净值字段则标记为 official_estimate；否则尝试根据涨跌幅近似（approx_from_change）"
+            "，仍不可得时降级为 nav_snapshot。"
         )
         notes_en = (
-            "AKShare open-fund NAV snapshot (typically post-close updates). "
-            "When an estimated-NAV field exists it is treated as official estimate; "
-            "otherwise est_nav falls back to NAV or a day-change approximation."
+            "AKShare open-fund NAV snapshot (typically post-close) + real historical NAV trend. "
+            "If estimated NAV is available, kind=official_estimate; otherwise approx_from_change from day change, "
+            "and fallback to nav_snapshot when unavailable."
         )
         if self._last_error:
             notes_zh += f" 最近一次请求异常：{self._last_error}"
@@ -222,8 +292,8 @@ class AKShareFundProvider:
 
         return ProviderMeta(
             provider_name="AKShareFundProvider",
-            source_label_zh="AKShare 开放式基金日净值快照",
-            source_label_en="AKShare Open-Fund Daily NAV Snapshot",
+            source_label_zh="AKShare 开放式基金快照 + 历史净值",
+            source_label_en="AKShare Open-Fund Snapshot + Historical NAV",
             data_mode="live",
             updated_at=updated_at,
             notes_zh=notes_zh,

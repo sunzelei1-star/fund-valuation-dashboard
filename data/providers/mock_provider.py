@@ -99,15 +99,15 @@ class LocalMockFundProvider:
             nav_series = np.append(nav_series, nav_series[-1] * (1 + daily))
         premium = rng.normal(0.0, 0.0038, size=days)
         est_series = nav_series * (1 + premium)
-        return pd.DataFrame({"date": dates, "nav": np.round(nav_series, 4), "est_nav": np.round(est_series, 4)})
+        return pd.DataFrame({"date": dates, "nav": np.round(nav_series, 4), "est_nav": np.round(est_series, 4), "has_est_history": True, "trend_source": "mock"})
 
     def get_default_positions(self) -> pd.DataFrame:
         return pd.DataFrame(
             [
-                {"code": "161725", "name": "招商中证白酒指数", "shares": 2200.0, "cost_per_share": 1.12},
-                {"code": "110022", "name": "易方达消费行业", "shares": 1800.0, "cost_per_share": 1.56},
-                {"code": "003095", "name": "中欧医疗健康混合", "shares": 900.0, "cost_per_share": 2.34},
-                {"code": "006113", "name": "华夏中证5G通信主题ETF联接", "shares": 1200.0, "cost_per_share": 1.42},
+                {"account": "主账户", "code": "161725", "name": "招商中证白酒指数", "input_mode": "pro", "shares": 2200.0, "cost_per_share": 1.12, "invested_amount": 0.0, "holding_profit": 0.0},
+                {"account": "支付宝", "code": "110022", "name": "易方达消费行业", "input_mode": "pro", "shares": 1800.0, "cost_per_share": 1.56, "invested_amount": 0.0, "holding_profit": 0.0},
+                {"account": "主账户", "code": "003095", "name": "中欧医疗健康混合", "input_mode": "simple", "shares": 0.0, "cost_per_share": 0.0, "invested_amount": 5200.0, "holding_profit": 480.0},
+                {"account": "家庭账户", "code": "006113", "name": "华夏中证5G通信主题ETF联接", "input_mode": "simple", "shares": 0.0, "cost_per_share": 0.0, "invested_amount": 3600.0, "holding_profit": -260.0},
             ]
         )
 
