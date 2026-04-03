@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from data.providers.registry import get_fund_data_provider
-from utils.analysis import calc_account_kpis, calc_portfolio_kpis, calc_position_metrics, generate_auto_insights
+from utils.analysis import REQUIRED_METRIC_COLUMNS, calc_account_kpis, calc_portfolio_kpis, calc_position_metrics, generate_auto_insights
 
 st.set_page_config(page_title="Fund Valuation Dashboard", page_icon="📊", layout="wide")
 
@@ -234,7 +234,7 @@ with left_col:
                 selected_label = st.selectbox("基金" if language == "zh" else "Fund", fund_snapshot["add_label"].tolist())
                 selected_code = selected_label.split(" | ")[0]
                 selected_row = fund_snapshot[fund_snapshot["code"] == selected_code].iloc[0]
-                mode = st.radio("录入模式" if language == "zh" else "Input mode", ["simple", "pro"], horizontal=True)
+                mode = st.radio("录入模式" if language == "zh" else "Input mode", ["simple", "pro"], horizontal=True, index=0)
                 name = st.text_input(L["table_name"], value=str(selected_row["name_zh"]))
                 if mode == "pro":
                     shares = st.number_input("持仓份额" if language == "zh" else "Shares", min_value=0.0, value=1000.0, step=100.0)
@@ -267,6 +267,7 @@ with left_col:
                 st.session_state.accounts = split_accounts(normalize_positions(provider.get_default_positions()))
 
             editable = normalize_positions(st.session_state.accounts[st.session_state.active_account], account=st.session_state.active_account)
+            st.caption("用户输入字段：input_mode / shares / cost_per_share / invested_amount / holding_profit" if language == "zh" else "User input fields: input_mode / shares / cost_per_share / invested_amount / holding_profit")
             st.session_state.accounts[st.session_state.active_account] = st.data_editor(
                 editable,
                 num_rows="dynamic",
@@ -314,6 +315,7 @@ with right_col:
 
     with compat_container(border=True):
         st.subheader(L["analysis_header"])
+        st.caption("系统推导字段：nav / est_nav / today_est_profit / total_profit / profit_rate 等" if language == "zh" else "System-derived fields: nav / est_nav / today_est_profit / total_profit / profit_rate, etc.")
         analysis_cols = [
             "account",
             "code",
@@ -331,12 +333,27 @@ with right_col:
             "total_profit",
             "profit_rate",
         ]
-        analysis_df = position_metrics[[c for c in analysis_cols if c in position_metrics.columns]].copy()
+        metrics_for_view = position_metrics.copy()
+        for col in REQUIRED_METRIC_COLUMNS:
+            if col not in metrics_for_view.columns:
+                metrics_for_view[col] = 0.0 if col not in {"account", "code", "name", "input_mode", "valuation_kind", "snapshot_time"} else ""
+        analysis_df = metrics_for_view.reindex(columns=analysis_cols, fill_value=0.0).copy()
         analysis_df["valuation_kind"] = analysis_df["valuation_kind"].map(lambda x: valuation_text(x, language))
         st.dataframe(analysis_df, hide_index=True, use_container_width=True)
         if not account_kpis.empty:
             st.markdown("**账户 KPI**" if language == "zh" else "**Account KPI**")
+            account_kpis = account_kpis.sort_values("today_est_profit", ascending=False).reset_index(drop=True)
             st.dataframe(account_kpis, hide_index=True, use_container_width=True)
+            fig_acc = px.bar(
+                account_kpis,
+                x="account",
+                y="total_return_rate",
+                color="today_est_profit",
+                color_continuous_scale="RdYlGn",
+                title="账户收益率对比" if language == "zh" else "Account return-rate comparison",
+            )
+            fig_acc.update_layout(template=plotly_template, height=260, coloraxis_showscale=False)
+            st.plotly_chart(fig_acc, use_container_width=True)
 
     with compat_container(border=True):
         st.subheader(L["charts_header"])

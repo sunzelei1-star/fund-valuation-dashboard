@@ -8,6 +8,31 @@ import pandas as pd
 PRO_INPUT_MODE = "pro"
 SIMPLE_INPUT_MODE = "simple"
 
+REQUIRED_METRIC_COLUMNS = [
+    "account",
+    "code",
+    "name",
+    "input_mode",
+    "shares",
+    "cost_per_share",
+    "invested_amount",
+    "holding_profit",
+    "nav",
+    "est_nav",
+    "day_change_pct",
+    "valuation_kind",
+    "est_nav_is_approx",
+    "snapshot_time",
+    "cost_value",
+    "market_value",
+    "est_market_value",
+    "today_est_profit",
+    "total_profit",
+    "profit_rate",
+    "is_profit",
+    "today_contribution_rate",
+]
+
 
 def _ensure_position_schema(positions: pd.DataFrame) -> pd.DataFrame:
     wanted = [
@@ -37,7 +62,14 @@ def _ensure_position_schema(positions: pd.DataFrame) -> pd.DataFrame:
 
 def calc_position_metrics(positions: pd.DataFrame, snapshot_df: pd.DataFrame) -> pd.DataFrame:
     if positions.empty:
-        return _ensure_position_schema(positions)
+        empty_df = _ensure_position_schema(positions)
+        for col in REQUIRED_METRIC_COLUMNS:
+            if col not in empty_df.columns:
+                empty_df[col] = 0.0 if col not in {"account", "code", "name", "input_mode", "valuation_kind", "snapshot_time"} else ""
+        empty_df["valuation_kind"] = empty_df["valuation_kind"].replace("", "nav_snapshot")
+        empty_df["est_nav_is_approx"] = True
+        empty_df = empty_df[REQUIRED_METRIC_COLUMNS]
+        return empty_df
 
     positions = _ensure_position_schema(positions)
     snapshot_cols = snapshot_df[
@@ -58,19 +90,33 @@ def calc_position_metrics(positions: pd.DataFrame, snapshot_df: pd.DataFrame) ->
         ]
     ]
     merged = positions.merge(snapshot_cols, on="code", how="left")
-    merged["name"] = merged["name"].fillna(merged.get("name_zh")).fillna(merged.get("name_en")).fillna(merged["code"])
+    if "name_zh" not in merged.columns:
+        merged["name_zh"] = pd.NA
+    if "name_en" not in merged.columns:
+        merged["name_en"] = pd.NA
+    merged["name"] = merged["name"].replace("", pd.NA).fillna(merged["name_zh"]).fillna(merged["name_en"]).fillna(merged["code"])
     merged["nav"] = pd.to_numeric(merged["nav"], errors="coerce").fillna(0.0)
     merged["est_nav"] = pd.to_numeric(merged.get("est_nav", merged["nav"]), errors="coerce").fillna(merged["nav"])
     merged["day_change_pct"] = pd.to_numeric(merged.get("day_change_pct", 0.0), errors="coerce").fillna(0.0)
-    merged["snapshot_time"] = merged.get("snapshot_time", "").fillna("")
+    merged["shares"] = pd.to_numeric(merged["shares"], errors="coerce").fillna(0.0).astype(float)
+    merged["cost_per_share"] = pd.to_numeric(merged["cost_per_share"], errors="coerce").fillna(0.0).astype(float)
+    merged["invested_amount"] = pd.to_numeric(merged["invested_amount"], errors="coerce").fillna(0.0).astype(float)
+    merged["holding_profit"] = pd.to_numeric(merged["holding_profit"], errors="coerce").fillna(0.0).astype(float)
+    if "snapshot_time" not in merged.columns:
+        merged["snapshot_time"] = ""
+    merged["snapshot_time"] = merged["snapshot_time"].fillna("").astype(str)
     if "valuation_kind" not in merged.columns:
         merged["valuation_kind"] = "nav_snapshot"
+    merged["valuation_kind"] = merged["valuation_kind"].fillna("nav_snapshot")
     if "est_nav_is_approx" not in merged.columns:
         merged["est_nav_is_approx"] = True
+    merged["est_nav_is_approx"] = merged["est_nav_is_approx"].fillna(True)
 
     pro_mask = merged["input_mode"].eq(PRO_INPUT_MODE)
     simple_mask = merged["input_mode"].eq(SIMPLE_INPUT_MODE)
 
+    merged["cost_value"] = 0.0
+    merged["market_value"] = 0.0
     merged.loc[pro_mask, "cost_value"] = merged.loc[pro_mask, "shares"] * merged.loc[pro_mask, "cost_per_share"]
     merged.loc[pro_mask, "market_value"] = merged.loc[pro_mask, "shares"] * merged.loc[pro_mask, "nav"]
 
@@ -95,7 +141,11 @@ def calc_position_metrics(positions: pd.DataFrame, snapshot_df: pd.DataFrame) ->
     else:
         merged["today_contribution_rate"] = merged["today_est_profit"] / total_today
 
-    return merged
+    for col in REQUIRED_METRIC_COLUMNS:
+        if col not in merged.columns:
+            merged[col] = 0.0 if col not in {"account", "code", "name", "input_mode", "valuation_kind", "snapshot_time"} else ""
+
+    return merged[REQUIRED_METRIC_COLUMNS]
 
 
 def calc_portfolio_kpis(position_metrics: pd.DataFrame) -> dict:
