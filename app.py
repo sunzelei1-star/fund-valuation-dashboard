@@ -258,12 +258,8 @@ def inject_styles() -> None:
 
 @contextmanager
 def compat_container(border: bool = False):
-    try:
-        with st.container(border=border):
-            yield
-    except TypeError:
-        with st.container():
-            yield
+    _ = border
+    yield
 
 
 def valuation_text(kind: str | None, language: str) -> str:
@@ -281,6 +277,14 @@ def money(x: float) -> str:
 
 def pct(x: float) -> str:
     return f"{x * 100:.2f}%"
+
+
+def localized_fund_name(snapshot: pd.DataFrame, code: str, language: str, fallback: str = "") -> str:
+    row = snapshot[snapshot["code"].astype(str) == str(code)]
+    if row.empty:
+        return fallback or str(code)
+    candidate = row.iloc[0]["name_zh"] if language == "zh" else row.iloc[0].get("name_en", row.iloc[0]["name_zh"])
+    return str(candidate) if str(candidate).strip() else (fallback or str(code))
 
 
 def normalize_positions(df: pd.DataFrame, account: str | None = None) -> pd.DataFrame:
@@ -375,8 +379,10 @@ with left_col:
         st.markdown(f'<div class="section-title">{L["query_header"]}</div>', unsafe_allow_html=True)
         query = st.text_input(L["query_input"], placeholder="161725 / 白酒 / consumer")
         fund_results = provider.search(query) if query else fund_snapshot
-        show_cols = ["code", "name_zh", "name_en", "category", "nav", "est_nav", "day_change_pct", "valuation_kind", "snapshot_time"]
+        name_col = "name_zh" if language == "zh" else "name_en"
+        show_cols = ["code", name_col, "category", "nav", "est_nav", "day_change_pct", "valuation_kind", "snapshot_time"]
         show_df = fund_results[[c for c in show_cols if c in fund_results.columns]].copy()
+        show_df = show_df.rename(columns={name_col: "name"})
         if "valuation_kind" in show_df.columns:
             show_df["valuation_kind"] = show_df["valuation_kind"].map(lambda x: valuation_text(x, language))
         st.dataframe(
@@ -384,6 +390,8 @@ with left_col:
             hide_index=True,
             use_container_width=True,
             column_config={
+                "code": st.column_config.TextColumn(L["table_code"]),
+                "name": st.column_config.TextColumn(L["table_name"]),
                 "nav": st.column_config.NumberColumn(L["table_nav"], format="%.4f"),
                 "est_nav": st.column_config.NumberColumn(L["table_est_nav"], format="%.4f"),
                 "day_change_pct": st.column_config.NumberColumn(L["table_day_pct"], format="%.2f%%"),
@@ -428,14 +436,16 @@ with left_col:
 
             with st.form("add_position_form", clear_on_submit=True):
                 st.markdown(f"**{L['add_position']}**")
-                fund_snapshot["add_label"] = fund_snapshot["code"] + " | " + fund_snapshot["name_zh"]
+                selector_name_col = "name_zh" if language == "zh" else "name_en"
+                fund_snapshot["add_label"] = fund_snapshot["code"] + " | " + fund_snapshot[selector_name_col]
                 selected_label = st.selectbox(L["fund_selector"], fund_snapshot["add_label"].tolist())
                 selected_code = selected_label.split(" | ")[0]
                 selected_row = fund_snapshot[fund_snapshot["code"] == selected_code].iloc[0]
                 mode = st.radio(L["input_mode"], ["simple", "pro"], horizontal=True, index=0)
                 mode_label = L["input_mode_simple"] if mode == "simple" else L["input_mode_pro"]
                 st.caption(mode_label)
-                name = st.text_input(L["table_name"], value=str(selected_row["name_zh"]))
+                default_name = str(selected_row["name_zh"] if language == "zh" else selected_row.get("name_en", selected_row["name_zh"]))
+                name = st.text_input(L["table_name"], value=default_name)
                 if mode == "pro":
                     shares = st.number_input("持仓份额" if language == "zh" else "Shares", min_value=0.0, value=1000.0, step=100.0)
                     cost_per_share = st.number_input("成本单价" if language == "zh" else "Cost/share", min_value=0.0, value=float(selected_row["nav"]), step=0.01)
@@ -477,7 +487,7 @@ with left_col:
                 use_container_width=True,
                 key=f"editor_{st.session_state.active_account}",
                 column_config={
-                    "account": st.column_config.TextColumn("Account", disabled=True),
+                    "account": st.column_config.TextColumn("账户" if language == "zh" else "Account", disabled=True),
                     "code": st.column_config.TextColumn(L["table_code"]),
                     "name": st.column_config.TextColumn(L["table_name"]),
                     "input_mode": st.column_config.SelectboxColumn(L["table_mode"], options=["simple", "pro"]),
@@ -499,6 +509,10 @@ else:
     current_positions = all_positions[all_positions["account"] == st.session_state.active_account]
 
 position_metrics = calc_position_metrics(current_positions, fund_snapshot)
+if language == "zh" and not position_metrics.empty:
+    position_metrics["name"] = position_metrics.apply(
+        lambda row: localized_fund_name(fund_snapshot, row["code"], language="zh", fallback=str(row["name"])), axis=1
+    )
 kpis = calc_portfolio_kpis(position_metrics)
 account_kpis = calc_account_kpis(calc_position_metrics(all_positions, fund_snapshot))
 
@@ -564,6 +578,9 @@ with right_col:
             hide_index=True,
             use_container_width=True,
             column_config={
+                "account": st.column_config.TextColumn("账户" if language == "zh" else "Account"),
+                "code": st.column_config.TextColumn(L["table_code"]),
+                "name": st.column_config.TextColumn(L["table_name"]),
                 "invested_amount": st.column_config.NumberColumn(L["table_invest"], format="¥ %.2f"),
                 "holding_profit": st.column_config.NumberColumn(L["table_profit_input"], format="¥ %.2f"),
                 "cost_per_share": st.column_config.NumberColumn(L["table_cost"], format="¥ %.4f"),
@@ -614,15 +631,18 @@ with right_col:
         trend_col, bar_col = st.columns(2)
         with trend_col:
             st.markdown(f"**{L['chart_nav']}**")
-            labels = (fund_snapshot["code"] + " | " + fund_snapshot["name_zh"]).tolist()
+            chart_name_col = "name_zh" if language == "zh" else "name_en"
+            labels = (fund_snapshot["code"] + " | " + fund_snapshot[chart_name_col]).tolist()
             selected_label = st.selectbox(L["chart_fund"], labels)
             chart_code = selected_label.split(" | ")[0]
             trend_df = provider.get_trend(chart_code, days=120)
             fig_trend = go.Figure()
-            fig_trend.add_trace(go.Scatter(x=trend_df["date"], y=trend_df["nav"], mode="lines", name="NAV", line=dict(color="#2563eb", width=2.6)))
+            nav_label = "净值" if language == "zh" else "NAV"
+            est_nav_label = "估值" if language == "zh" else "Est NAV"
+            fig_trend.add_trace(go.Scatter(x=trend_df["date"], y=trend_df["nav"], mode="lines", name=nav_label, line=dict(color="#2563eb", width=2.6)))
             fig_trend.add_trace(
                 go.Scatter(
-                    x=trend_df["date"], y=trend_df["est_nav"], mode="lines", name="Est NAV", line=dict(color="#0ea5e9", dash="dot", width=2.2)
+                    x=trend_df["date"], y=trend_df["est_nav"], mode="lines", name=est_nav_label, line=dict(color="#0ea5e9", dash="dot", width=2.2)
                 )
             )
             fig_trend.update_layout(
