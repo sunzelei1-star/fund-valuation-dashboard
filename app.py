@@ -156,53 +156,98 @@ I18N = {
 
 
 def inject_styles() -> None:
+    is_dark = st.get_option("theme.base") == "dark"
+    colors = {
+        "app_bg": "#0b1220" if is_dark else "#f5f7fb",
+        "card_bg": "#111a2e" if is_dark else "#ffffff",
+        "card_border": "#25324a" if is_dark else "#e6ebf2",
+        "text_primary": "#e6edf7" if is_dark else "#0f172a",
+        "text_secondary": "#b8c5d8" if is_dark else "#475569",
+        "input_bg": "#0f1a30" if is_dark else "#ffffff",
+        "input_border": "#334155" if is_dark else "#dbe3ef",
+        "input_focus": "#60a5fa" if is_dark else "#2563eb",
+        "table_head_bg": "#17233a" if is_dark else "#f8fafc",
+        "table_head_text": "#dbe7fb" if is_dark else "#334155",
+        "table_body_bg": "#111a2e" if is_dark else "#ffffff",
+        "button_bg": "#2563eb" if is_dark else "#1d4ed8",
+        "button_text": "#f8fbff",
+        "button_hover": "#1d4ed8" if is_dark else "#1e40af",
+    }
     st.markdown(
-        """
+        f"""
         <style>
-        .stApp { background: #f5f7fb; }
-        .block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1320px; }
-        [data-testid="stMetric"] {
-            background: #ffffff; border: 1px solid #e8edf5; border-radius: 14px;
-            padding: 14px 16px; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
-        }
-        [data-testid="stMetricLabel"] { color: #4b5563; font-weight: 600; }
-        [data-testid="stMetricValue"] { color: #0f172a; font-weight: 700; }
-        .panel-card {
-            background: #fff; border: 1px solid #e6ebf2; border-radius: 16px;
+        .stApp {{ background: {colors["app_bg"]}; color: {colors["text_primary"]}; }}
+        .block-container {{ padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1320px; }}
+        [data-testid="stMetric"] {{
+            background: {colors["card_bg"]}; border: 1px solid {colors["card_border"]}; border-radius: 14px;
+            padding: 14px 16px; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.10);
+        }}
+        [data-testid="stMetricLabel"] {{ color: {colors["text_secondary"]}; font-weight: 600; }}
+        [data-testid="stMetricValue"] {{ color: {colors["text_primary"]}; font-weight: 700; }}
+        [data-testid="stMetricDelta"] {{ color: {colors["text_secondary"]}; }}
+        .panel-card {{
+            background: {colors["card_bg"]}; border: 1px solid {colors["card_border"]}; border-radius: 16px;
             padding: 16px 18px; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04); margin-bottom: 0.9rem;
-        }
-        .hero-card {
+        }}
+        .hero-card {{
             background: linear-gradient(135deg, #0f4c81 0%, #0c6aa6 52%, #1393c7 100%);
             border-radius: 18px; color: #f8fbff; padding: 1.1rem 1.25rem; margin-bottom: 0.75rem;
             box-shadow: 0 6px 18px rgba(14, 76, 129, 0.22);
-        }
-        .hero-badge {
+        }}
+        .hero-badge {{
             display: inline-block; font-size: 0.72rem; font-weight: 700; letter-spacing: .02em;
             background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.3);
             border-radius: 999px; padding: 4px 10px; margin-bottom: .35rem;
-        }
-        .hero-cap-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
-        .hero-cap {
+        }}
+        .hero-cap-row {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }}
+        .hero-cap {{
             background: rgba(255,255,255,.14); border-radius: 10px; padding: 7px 10px;
             border: 1px solid rgba(255,255,255,.2); font-size: .83rem;
-        }
-        .hint { color: #64748b; font-size: .82rem; margin-top: .35rem; }
-        .section-title { font-size: 1rem; font-weight: 700; color: #0f172a; margin-bottom: .4rem; }
-        .footnote { color: #64748b; font-size: .84rem; padding: .35rem .1rem 0 .1rem; }
-        div[data-testid="stDataFrame"] div[role="columnheader"] {
-            background: #f8fafc !important; color: #334155 !important; font-weight: 600 !important;
-        }
-        div[data-testid="stDataEditor"] [data-testid="stDataFrame"] {
-            border: 1px solid #e8edf5; border-radius: 12px;
-        }
-        div[data-testid="stDataEditor"] div[role="columnheader"] {
-            background: #f8fafc !important; color: #334155 !important; font-weight: 600 !important;
-        }
-        .stTextInput > div > div input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] > div {
-            border-radius: 10px !important; border-color: #dbe3ef !important;
-        }
-        .stButton > button { border-radius: 10px !important; }
-        .modebar { display: none !important; }
+        }}
+        .hint {{ color: {colors["text_secondary"]}; font-size: .82rem; margin-top: .35rem; }}
+        .section-title {{ font-size: 1rem; font-weight: 700; color: {colors["text_primary"]}; margin-bottom: .4rem; }}
+        .footnote {{ color: {colors["text_secondary"]}; font-size: .84rem; padding: .35rem .1rem 0 .1rem; }}
+        [data-testid="stCaptionContainer"], label, p, li {{ color: {colors["text_primary"]}; }}
+        div[data-testid="stDataFrame"] div[role="columnheader"] {{
+            background: {colors["table_head_bg"]} !important; color: {colors["table_head_text"]} !important; font-weight: 600 !important;
+        }}
+        div[data-testid="stDataFrame"] div[role="gridcell"],
+        div[data-testid="stDataEditor"] div[role="gridcell"] {{
+            color: {colors["text_primary"]} !important;
+            background: {colors["table_body_bg"]} !important;
+        }}
+        div[data-testid="stDataEditor"] [data-testid="stDataFrame"] {{
+            border: 1px solid {colors["card_border"]}; border-radius: 12px;
+        }}
+        div[data-testid="stDataEditor"] div[role="columnheader"] {{
+            background: {colors["table_head_bg"]} !important; color: {colors["table_head_text"]} !important; font-weight: 600 !important;
+        }}
+        .stTextInput > div > div input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] > div, .stTextArea textarea {{
+            border-radius: 10px !important; border-color: {colors["input_border"]} !important;
+            background: {colors["input_bg"]} !important; color: {colors["text_primary"]} !important;
+        }}
+        .stTextInput > div > div input::placeholder, .stTextArea textarea::placeholder {{
+            color: {colors["text_secondary"]} !important; opacity: 0.9 !important;
+        }}
+        .stTextInput > div > div input:focus, .stNumberInput input:focus, .stSelectbox div[data-baseweb="select"] > div:focus-within {{
+            border-color: {colors["input_focus"]} !important;
+            box-shadow: 0 0 0 1px {colors["input_focus"]} !important;
+        }}
+        .stSelectbox span, .stRadio label, .stMarkdown, .stCaption {{
+            color: {colors["text_primary"]} !important;
+        }}
+        .stButton > button {{
+            border-radius: 10px !important;
+            background: {colors["button_bg"]} !important;
+            color: {colors["button_text"]} !important;
+            border: 1px solid {colors["button_bg"]} !important;
+            font-weight: 600 !important;
+        }}
+        .stButton > button:hover {{
+            background: {colors["button_hover"]} !important;
+            border-color: {colors["button_hover"]} !important;
+        }}
+        .modebar {{ display: none !important; }}
 
         </style>
         """,
@@ -227,6 +272,37 @@ def valuation_text(kind: str | None, language: str) -> str:
         "nav_snapshot": I18N[language]["nav_snapshot"],
     }
     return mapping.get(str(kind), I18N[language]["nav_snapshot"])
+
+
+def build_fund_name_lookup(fund_snapshot: pd.DataFrame, language: str) -> dict[str, str]:
+    primary = "name_zh" if language == "zh" else "name_en"
+    fallback = "name_en" if language == "zh" else "name_zh"
+    base = fund_snapshot.copy()
+    for col in [primary, fallback, "code"]:
+        if col not in base.columns:
+            base[col] = ""
+    base[primary] = base[primary].fillna("").astype(str).str.strip()
+    base[fallback] = base[fallback].fillna("").astype(str).str.strip()
+    base["display_name"] = base[primary]
+    empty_mask = base["display_name"] == ""
+    base.loc[empty_mask, "display_name"] = base.loc[empty_mask, fallback]
+    empty_mask = base["display_name"] == ""
+    base.loc[empty_mask, "display_name"] = base.loc[empty_mask, "code"].astype(str)
+    return dict(zip(base["code"].astype(str), base["display_name"]))
+
+
+def localize_fund_name_column(
+    df: pd.DataFrame, lookup: dict[str, str], code_col: str = "code", name_col: str = "name"
+) -> pd.DataFrame:
+    out = df.copy()
+    if code_col not in out.columns:
+        return out
+    localized = out[code_col].astype(str).map(lookup)
+    if name_col in out.columns:
+        out[name_col] = localized.fillna(out[name_col].astype(str))
+    else:
+        out[name_col] = localized.fillna(out[code_col].astype(str))
+    return out
 
 
 def money(x: float) -> str:
@@ -265,7 +341,13 @@ def split_accounts(positions: pd.DataFrame) -> dict[str, pd.DataFrame]:
 
 inject_styles()
 provider = get_fund_data_provider()
-plotly_template = "plotly_dark" if st.get_option("theme.base") == "dark" else "plotly_white"
+is_dark_theme = st.get_option("theme.base") == "dark"
+plotly_template = "plotly_dark" if is_dark_theme else "plotly_white"
+plotly_font_color = "#dbe7fb" if is_dark_theme else "#1e293b"
+plotly_axis_grid = "#334155" if is_dark_theme else "#dbe3ef"
+plotly_paper_bg = "#111a2e" if is_dark_theme else "#ffffff"
+plotly_hover_bg = "#1e293b" if is_dark_theme else "#f8fafc"
+plotly_hover_font = "#f8fbff" if is_dark_theme else "#0f172a"
 plotly_config = {
     "displayModeBar": False,
     "displaylogo": False,
@@ -310,6 +392,8 @@ except Exception:
     provider = LocalMockFundProvider()
     fund_snapshot = provider.get_snapshots()
 
+fund_name_lookup = build_fund_name_lookup(fund_snapshot, language)
+
 if "accounts" not in st.session_state:
     st.session_state.accounts = split_accounts(normalize_positions(provider.get_default_positions()))
 if "active_account" not in st.session_state:
@@ -323,8 +407,9 @@ with left_col:
         st.markdown(f'<div class="section-title">{L["query_header"]}</div>', unsafe_allow_html=True)
         query = st.text_input(L["query_input"], placeholder="161725 / 白酒 / consumer")
         fund_results = provider.search(query) if query else fund_snapshot
-        show_cols = ["code", "name_zh", "name_en", "category", "nav", "est_nav", "day_change_pct", "valuation_kind", "snapshot_time"]
+        show_cols = ["code", "category", "nav", "est_nav", "day_change_pct", "valuation_kind", "snapshot_time"]
         show_df = fund_results[[c for c in show_cols if c in fund_results.columns]].copy()
+        show_df.insert(1, "name", fund_results["code"].astype(str).map(fund_name_lookup).fillna(fund_results.get("name_zh", "")))
         if "valuation_kind" in show_df.columns:
             show_df["valuation_kind"] = show_df["valuation_kind"].map(lambda x: valuation_text(x, language))
         st.dataframe(
@@ -332,6 +417,7 @@ with left_col:
             hide_index=True,
             use_container_width=True,
             column_config={
+                "name": st.column_config.TextColumn(L["table_name"]),
                 "nav": st.column_config.NumberColumn(L["table_nav"], format="%.4f"),
                 "est_nav": st.column_config.NumberColumn(L["table_est_nav"], format="%.4f"),
                 "day_change_pct": st.column_config.NumberColumn(L["table_day_pct"], format="%.2f%%"),
@@ -376,14 +462,15 @@ with left_col:
 
             with st.form("add_position_form", clear_on_submit=True):
                 st.markdown(f"**{L['add_position']}**")
-                fund_snapshot["add_label"] = fund_snapshot["code"] + " | " + fund_snapshot["name_zh"]
+                fund_snapshot["add_label"] = fund_snapshot["code"] + " | " + fund_snapshot["code"].map(fund_name_lookup).fillna("")
                 selected_label = st.selectbox(L["fund_selector"], fund_snapshot["add_label"].tolist())
                 selected_code = selected_label.split(" | ")[0]
                 selected_row = fund_snapshot[fund_snapshot["code"] == selected_code].iloc[0]
                 mode = st.radio(L["input_mode"], ["simple", "pro"], horizontal=True, index=0)
                 mode_label = L["input_mode_simple"] if mode == "simple" else L["input_mode_pro"]
                 st.caption(mode_label)
-                name = st.text_input(L["table_name"], value=str(selected_row["name_zh"]))
+                default_name = fund_name_lookup.get(selected_code, str(selected_row.get("name_zh", selected_code)))
+                name = st.text_input(L["table_name"], value=default_name)
                 if mode == "pro":
                     shares = st.number_input("持仓份额" if language == "zh" else "Shares", min_value=0.0, value=1000.0, step=100.0)
                     cost_per_share = st.number_input("成本单价" if language == "zh" else "Cost/share", min_value=0.0, value=float(selected_row["nav"]), step=0.01)
@@ -415,6 +502,7 @@ with left_col:
                 st.session_state.accounts[st.session_state.active_account] = normalize_positions(pd.DataFrame(), account=st.session_state.active_account)
 
             editable = normalize_positions(st.session_state.accounts[st.session_state.active_account], account=st.session_state.active_account)
+            editable = localize_fund_name_column(editable, fund_name_lookup)
             st.caption(
                 f"{L['input_fields']}：input_mode / shares / cost_per_share / invested_amount / holding_profit"
             )
@@ -447,6 +535,7 @@ else:
     current_positions = all_positions[all_positions["account"] == st.session_state.active_account]
 
 position_metrics = calc_position_metrics(current_positions, fund_snapshot)
+position_metrics = localize_fund_name_column(position_metrics, fund_name_lookup)
 kpis = calc_portfolio_kpis(position_metrics)
 account_kpis = calc_account_kpis(calc_position_metrics(all_positions, fund_snapshot))
 
@@ -545,6 +634,14 @@ with right_col:
                 title="账户收益率对比" if language == "zh" else "Account return-rate comparison",
             )
             fig_acc.update_layout(template=plotly_template, height=250, coloraxis_showscale=False, margin=dict(l=8, r=8, t=40, b=6))
+            fig_acc.update_layout(
+                font=dict(color=plotly_font_color),
+                paper_bgcolor=plotly_paper_bg,
+                plot_bgcolor=plotly_paper_bg,
+                xaxis=dict(gridcolor=plotly_axis_grid),
+                yaxis=dict(gridcolor=plotly_axis_grid),
+                hoverlabel=dict(bgcolor=plotly_hover_bg, font=dict(color=plotly_hover_font, size=12)),
+            )
             st.plotly_chart(fig_acc, use_container_width=True, config=plotly_config)
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -554,7 +651,7 @@ with right_col:
         trend_col, bar_col = st.columns(2)
         with trend_col:
             st.markdown(f"**{L['chart_nav']}**")
-            labels = (fund_snapshot["code"] + " | " + fund_snapshot["name_zh"]).tolist()
+            labels = (fund_snapshot["code"] + " | " + fund_snapshot["code"].map(fund_name_lookup).fillna("")).tolist()
             selected_label = st.selectbox(L["chart_fund"], labels)
             chart_code = selected_label.split(" | ")[0]
             trend_df = provider.get_trend(chart_code, days=120)
@@ -572,7 +669,12 @@ with right_col:
                 yaxis_title=L["chart_nav_axis"],
                 legend=dict(orientation="h", y=1.05, x=0),
                 margin=dict(l=6, r=6, t=16, b=4),
-                hoverlabel=dict(bgcolor="#0f172a", font_size=12),
+                font=dict(color=plotly_font_color),
+                paper_bgcolor=plotly_paper_bg,
+                plot_bgcolor=plotly_paper_bg,
+                xaxis=dict(gridcolor=plotly_axis_grid),
+                yaxis=dict(gridcolor=plotly_axis_grid),
+                hoverlabel=dict(bgcolor=plotly_hover_bg, font=dict(color=plotly_hover_font, size=12)),
             )
             st.plotly_chart(fig_trend, use_container_width=True, config=plotly_config)
             if not bool(trend_df.get("has_est_history", pd.Series([True])).iloc[0]):
@@ -601,7 +703,12 @@ with right_col:
                     xaxis_title="",
                     margin=dict(l=6, r=6, t=14, b=20),
                     coloraxis_showscale=False,
-                    xaxis=dict(tickangle=-12, tickfont=dict(size=11)),
+                    xaxis=dict(tickangle=-12, tickfont=dict(size=11), gridcolor=plotly_axis_grid),
+                    yaxis=dict(gridcolor=plotly_axis_grid),
+                    font=dict(color=plotly_font_color),
+                    paper_bgcolor=plotly_paper_bg,
+                    plot_bgcolor=plotly_paper_bg,
+                    hoverlabel=dict(bgcolor=plotly_hover_bg, font=dict(color=plotly_hover_font, size=12)),
                 )
                 st.plotly_chart(fig_bar, use_container_width=True, config=plotly_config)
         st.markdown('</div>', unsafe_allow_html=True)
