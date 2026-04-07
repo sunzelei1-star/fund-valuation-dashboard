@@ -322,9 +322,10 @@ def split_accounts(positions: pd.DataFrame) -> dict[str, pd.DataFrame]:
     return out
 
 
-inject_styles(st.get_option("theme.base") == "dark")
+is_dark_theme = st.get_option("theme.base") == "dark"
+inject_styles(is_dark_theme)
 provider = get_fund_data_provider()
-plotly_template = "plotly_dark" if st.get_option("theme.base") == "dark" else "plotly_white"
+plotly_template = "plotly_dark" if is_dark_theme else "plotly_white"
 plotly_config = {
     "displayModeBar": False,
     "displaylogo": False,
@@ -631,7 +632,7 @@ with right_col:
                 yaxis_title=L["chart_nav_axis"],
                 legend=dict(orientation="h", y=1.05, x=0),
                 margin=dict(l=6, r=6, t=16, b=4),
-                hoverlabel=dict(bgcolor="#1e293b" if st.get_option("theme.base") == "dark" else "#0f172a", font_size=12, font_color="#f8fafc"),
+                hoverlabel=dict(bgcolor="#1e293b" if is_dark_theme else "#0f172a", font_size=12, font_color="#f8fafc"),
             )
             st.plotly_chart(fig_trend, use_container_width=True, config=plotly_config)
             if not bool(trend_df.get("has_est_history", pd.Series([True])).iloc[0]):
